@@ -1,8 +1,9 @@
 import lightning as L
 from diffusers.pipelines import FluxPipeline
 import torch
+import torch.nn as nn
 from peft import LoraConfig, get_peft_model_state_dict
-
+from transformers import AutoTokenizer, AutoModel
 import prodigyopt
 
 from ..flux.transformer import tranformer_forward
@@ -21,6 +22,8 @@ class OminiModel(L.LightningModule):
         model_config: dict = {},
         optimizer_config: dict = None,
         gradient_checkpointing: bool = False,
+        connector_config: dict = {},
+        mllm_config: dict = {},
     ):
         # Initialize the LightningModule
         super().__init__()
@@ -42,6 +45,13 @@ class OminiModel(L.LightningModule):
 
         # Initialize LoRA layers
         self.lora_layers = self.init_lora(lora_path, lora_config)
+        self.learnable_query = nn.Parameter(torch.randn(256, 3584))
+        self.learnable_query.requires_grad = True
+        # Initialize connector
+        self.connector = Connector(**connector_config)
+        self.connector.requires_grad = True
+        self.mllm = UnderstandingModel(**mllm_config)
+        self.mllm.requires_grad_(False).eval()
 
         self.to(device).to(dtype)
 
@@ -183,3 +193,41 @@ class OminiModel(L.LightningModule):
         loss = torch.nn.functional.mse_loss(pred, (x_1 - x_0), reduction="mean")
         self.last_t = t.mean().item()
         return loss
+
+class Connector(nn.Module):
+    def __init__(self, connector_name:str="Qwen/Qwen2.5-0.5B", embedding_dim:int=2304):
+        super().__init__()
+        self.connector = AutoModel.from_pretrained(connector_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(connector_name)
+        self.connector.config.is_causal = False
+
+        self.projector = nn.Linear(self.connector.config.hidden_size, embedding_dim)
+
+    def forward(self, x):
+        x = self.connector(x)
+        x = self.projector(x)
+        return x
+        
+
+class UnderstandingModel(nn.Module):
+    def __init__(
+        self, 
+        mllm:str = "Qwen/Qwen2.5-VL-7B-Instruct",
+        num_queries:int=256,
+        hidden_size:int=3584,
+    ):
+        super().__init__()
+        self.mllm = AutoModel.from_pretrained(mllm)
+        self.tokenizer = AutoTokenizer.from_pretrained(mllm)
+        self.num_queries=num_queries
+        self.hidden_size=hidden_size
+        
+        
+    def forward(self, image, prompt, learnable_query):
+        image_features = self.mllm.encode_image(image)
+        prompt_features = self.mllm.encode_text(prompt)
+        query_features = learnable_query.unsqueeze(0).repeat(prompt_features.shape[0], 1, 1)
+        query_token_number = query_features.shape[1]
+        concat_features = torch.cat([image_features, prompt_features, query_features], dim=1)
+        output_query = self.mllm(inputs_embeds=concat_features)['hidden_states'][:, -query_token_number:]
+        return output_query

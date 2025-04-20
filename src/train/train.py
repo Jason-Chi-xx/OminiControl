@@ -120,6 +120,17 @@ def main():
             drop_text_prob=training_config["dataset"]["drop_text_prob"],
             drop_image_prob=training_config["dataset"]["drop_image_prob"],
         )
+    elif training_config["dataset"]["type"] == "expression":
+        dataset = ExpressionDataset(
+            metadata=training_config["dataset"]["metadata_path"],
+            condition_size=training_config["dataset"]["condition_size"],
+            target_size=training_config["dataset"]["target_size"],
+            image_size=training_config["dataset"]["image_size"],
+            padding=training_config["dataset"]["padding"],
+            condition_type=training_config["condition_type"],
+            drop_text_prob=training_config["dataset"]["drop_text_prob"],
+            drop_image_prob=training_config["dataset"]["drop_image_prob"],
+        )
     else:
         raise NotImplementedError
 
@@ -138,6 +149,8 @@ def main():
         device=f"cuda",
         dtype=getattr(torch, config["dtype"]),
         optimizer_config=training_config["optimizer"],
+        connector_config=training_config["connector_config"],
+        mllm_config=training_config["mllm_config"],
         model_config=config.get("model", {}),
         gradient_checkpointing=training_config.get("gradient_checkpointing", False),
     )

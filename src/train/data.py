@@ -4,8 +4,8 @@ import numpy as np
 from torch.utils.data import Dataset
 import torchvision.transforms as T
 import random
-
-
+import json
+import os
 class Subject200KDataset(Dataset):
     def __init__(
         self,
@@ -321,3 +321,54 @@ class CartoonDataset(Dataset):
             # 16 is the downscale factor of the image
             "position_delta": np.array([0, -16]),
         }
+
+class ExpressionDataset(Dataset):
+    def __init__(
+        self,
+        metadata: str,
+        condition_size: int = 512,
+        target_size: int = 512,
+        image_size: int = 512,
+        padding: int = 0,
+        condition_type: str = "expression",
+        drop_text_prob: float = 0.1,
+        drop_image_prob: float = 0.1,
+        return_pil_image: bool = False,
+    ):
+        with open(metadata, "r") as f:
+            self.metadata = json.load(f)
+        self.condition_size = condition_size
+        self.target_size = target_size
+        self.condition_type = condition_type
+        self.drop_text_prob = drop_text_prob
+        self.drop_image_prob = drop_image_prob
+        self.return_pil_image = return_pil_image
+
+        self.to_tensor = T.ToTensor()
+
+    def __len__(self):
+        return len(self.metadata)
+
+    def __getitem__(self, idx):
+        data_info = self.metadata[idx]
+        image_folder = data_info["folder_path"]
+        prompt = data_info["prompt"]
+        source_image = Image.open(os.path.join(image_folder, "source.png")).convert("RGB")
+        target_image = Image.open(os.path.join(image_folder, "target.png")).convert("RGB")
+
+        drop_text = random.random() < self.drop_text_prob
+        drop_image = random.random() < self.drop_image_prob
+        if drop_text:
+            prompt = ""
+        if drop_image:
+            source_image = Image.new("RGB", (self.condition_size, self.condition_size), (0, 0, 0))
+        
+        
+        result = {
+            "image": self.to_tensor(target_image),
+            "condition": self.to_tensor(source_image),
+            "condition_type": self.condition_type,
+            "description": prompt,
+            "position_delta": np.array([0, -self.condition_size // 16]),
+        }
+        return result
