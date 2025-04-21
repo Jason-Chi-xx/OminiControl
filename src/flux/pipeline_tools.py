@@ -30,7 +30,7 @@ def encode_images(pipeline: FluxPipeline, images: Tensor):
     return images_tokens, images_ids
 
 
-def prepare_text_input(pipeline: FluxPipeline, prompts, max_sequence_length=512):
+def prepare_text_input(pipeline: FluxPipeline, prompts, prompt_embeds, max_sequence_length=512):
     # Turn off warnings (CLIP overflow)
     logger.setLevel(logging.ERROR)
     (
@@ -40,7 +40,7 @@ def prepare_text_input(pipeline: FluxPipeline, prompts, max_sequence_length=512)
     ) = pipeline.encode_prompt(
         prompt=prompts,
         prompt_2=None,
-        prompt_embeds=None,
+        prompt_embeds=prompt_embeds,
         pooled_prompt_embeds=None,
         device=pipeline.device,
         num_images_per_prompt=1,

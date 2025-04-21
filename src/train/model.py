@@ -50,6 +50,7 @@ class OminiModel(L.LightningModule):
         # Initialize connector
         self.connector = Connector(**connector_config)
         self.connector.requires_grad = True
+        self.connector.train()
         self.mllm = UnderstandingModel(**mllm_config)
         self.mllm.requires_grad_(False).eval()
 
@@ -81,7 +82,8 @@ class OminiModel(L.LightningModule):
         opt_config = self.optimizer_config
 
         # Set the trainable parameters
-        self.trainable_params = self.lora_layers
+        self.trainable_params = [self.learnable_query, self.connector]
+        self.trainable_params.extend(self.lora_layers)
 
         # Unfreeze trainable parameters
         for p in self.trainable_params:
@@ -118,16 +120,21 @@ class OminiModel(L.LightningModule):
         prompts = batch["description"]
         position_delta = batch["position_delta"][0]
         position_scale = float(batch.get("position_scale", [1.0])[0])
-
+        text_query = self.mllm(
+            image=conditions,
+            prompt=prompts,
+            learnable_query=self.learnable_query,
+        )
+        prompt_embeds = self.connector(text_query)
+        # Prepare text input
+        prompt_embeds, pooled_prompt_embeds, text_ids = prepare_text_input(
+            self.flux_pipe, prompts, prompt_embeds
+        )
         # Prepare inputs
         with torch.no_grad():
             # Prepare image input
             x_0, img_ids = encode_images(self.flux_pipe, imgs)
 
-            # Prepare text input
-            prompt_embeds, pooled_prompt_embeds, text_ids = prepare_text_input(
-                self.flux_pipe, prompts
-            )
 
             # Prepare t and x_t
             t = torch.sigmoid(torch.randn((imgs.shape[0],), device=self.device))
@@ -195,7 +202,7 @@ class OminiModel(L.LightningModule):
         return loss
 
 class Connector(nn.Module):
-    def __init__(self, connector_name:str="Qwen/Qwen2.5-0.5B", embedding_dim:int=2304):
+    def __init__(self, connector_name:str="Qwen/Qwen2.5-0.5B", embedding_dim:int=4096):
         super().__init__()
         self.connector = AutoModel.from_pretrained(connector_name)
         self.tokenizer = AutoTokenizer.from_pretrained(connector_name)

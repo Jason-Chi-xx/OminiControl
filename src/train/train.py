@@ -7,7 +7,7 @@ import time
 
 from datasets import load_dataset
 
-from .data import ImageConditionDataset, Subject200KDataset, CartoonDataset
+from .data import ImageConditionDataset, Subject200KDataset, CartoonDataset, ExpressionDataset
 from .model import OminiModel
 from .callbacks import TrainingCallback
 
