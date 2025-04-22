@@ -44,8 +44,11 @@ train:
       weight_decay: 0.01
 
   connector_config:
-    connector_name: "Qwen/Qwen2.5-0.5B"
-    embedding_dim: 2304
+    input_dim: 3584
+    output_dim: 4096
+    num_layers: 2
+    n_heads: 16
+    dropout: 0.1
 
   mllm_config:
     mllm: "Qwen/Qwen2.5-VL-7B-Instruct"

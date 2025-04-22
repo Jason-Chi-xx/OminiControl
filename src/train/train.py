@@ -7,7 +7,7 @@ import time
 
 from datasets import load_dataset
 
-from .data import ImageConditionDataset, Subject200KDataset, CartoonDataset, ExpressionDataset
+from .data import ImageConditionDataset, Subject200KDataset, CartoonDataset, ExpressionDataset, MetaqueryDataset
 from .model import OminiModel
 from .callbacks import TrainingCallback
 
@@ -60,79 +60,9 @@ def main():
         print("Config:", config)
 
     # Initialize dataset and dataloader
-    if training_config["dataset"]["type"] == "subject":
-        dataset = load_dataset("Yuanshi/Subjects200K")
-
-        # Define filter function
-        def filter_func(item):
-            if not item.get("quality_assessment"):
-                return False
-            return all(
-                item["quality_assessment"].get(key, 0) >= 5
-                for key in ["compositeStructure", "objectConsistency", "imageQuality"]
-            )
-
-        # Filter dataset
-        if not os.path.exists("./cache/dataset"):
-            os.makedirs("./cache/dataset")
-        data_valid = dataset["train"].filter(
-            filter_func,
-            num_proc=16,
-            cache_file_name="./cache/dataset/data_valid.arrow",
-        )
-        dataset = Subject200KDataset(
-            data_valid,
-            condition_size=training_config["dataset"]["condition_size"],
-            target_size=training_config["dataset"]["target_size"],
-            image_size=training_config["dataset"]["image_size"],
-            padding=training_config["dataset"]["padding"],
-            condition_type=training_config["condition_type"],
-            drop_text_prob=training_config["dataset"]["drop_text_prob"],
-            drop_image_prob=training_config["dataset"]["drop_image_prob"],
-        )
-    elif training_config["dataset"]["type"] == "img":
-        # Load dataset text-to-image-2M
-        dataset = load_dataset(
-            "webdataset",
-            data_files={"train": training_config["dataset"]["urls"]},
-            split="train",
-            cache_dir="cache/t2i2m",
-            num_proc=32,
-        )
-        dataset = ImageConditionDataset(
-            dataset,
-            condition_size=training_config["dataset"]["condition_size"],
-            target_size=training_config["dataset"]["target_size"],
-            condition_type=training_config["condition_type"],
-            drop_text_prob=training_config["dataset"]["drop_text_prob"],
-            drop_image_prob=training_config["dataset"]["drop_image_prob"],
-            position_scale=training_config["dataset"].get("position_scale", 1.0),
-        )
-    elif training_config["dataset"]["type"] == "cartoon":
-        dataset = load_dataset("saquiboye/oye-cartoon", split="train")
-        dataset = CartoonDataset(
-            dataset,
-            condition_size=training_config["dataset"]["condition_size"],
-            target_size=training_config["dataset"]["target_size"],
-            image_size=training_config["dataset"]["image_size"],
-            padding=training_config["dataset"]["padding"],
-            condition_type=training_config["condition_type"],
-            drop_text_prob=training_config["dataset"]["drop_text_prob"],
-            drop_image_prob=training_config["dataset"]["drop_image_prob"],
-        )
-    elif training_config["dataset"]["type"] == "expression":
-        dataset = ExpressionDataset(
-            metadata=training_config["dataset"]["metadata_path"],
-            condition_size=training_config["dataset"]["condition_size"],
-            target_size=training_config["dataset"]["target_size"],
-            image_size=training_config["dataset"]["image_size"],
-            padding=training_config["dataset"]["padding"],
-            condition_type=training_config["condition_type"],
-            drop_text_prob=training_config["dataset"]["drop_text_prob"],
-            drop_image_prob=training_config["dataset"]["drop_image_prob"],
-        )
-    else:
-        raise NotImplementedError
+    if training_config["dataset"]["name"] == "metaquery":
+        dataset = load_dataset("parquet", data_files={"train": "portrait-512/train.parquet"})
+        dataset = MetaqueryDataset(dataset)
 
     print("Dataset length:", len(dataset))
     train_loader = DataLoader(

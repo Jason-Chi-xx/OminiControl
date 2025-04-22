@@ -6,6 +6,11 @@ import torchvision.transforms as T
 import random
 import json
 import os
+import io
+import copy
+from typing import Dict, Optional, Sequence, List, Tuple
+import transformers
+from transformers import AutoProcessor
 class Subject200KDataset(Dataset):
     def __init__(
         self,
@@ -370,5 +375,44 @@ class ExpressionDataset(Dataset):
             "condition_type": self.condition_type,
             "description": prompt,
             "position_delta": np.array([0, -self.condition_size // 16]),
+        }
+        return result
+    
+class MetaqueryDataset(Dataset):
+    
+    def __init__(
+        self,
+        base_dataset,
+        target_size: int = 512,
+    ):
+        self.base_dataset = base_dataset['train']['image']
+        self.to_tensor = T.ToTensor()
+        self.target_size = target_size
+        self.processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def process_image_unified(self, image_file):
+        image = Image.open(image_file).convert("RGB")
+
+        visual_processed = self.processor.preprocess(image, return_tensors="pt")
+        image_tensor = visual_processed["pixel_values"]
+        if isinstance(image_tensor, List):
+            image_tensor = image_tensor[0]
+        grid_thw = visual_processed["image_grid_thw"][0]
+        return image_tensor, grid_thw  
+            
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+        image = item["bytes"]
+        image = Image.open(io.BytesIO(image))
+        image = image.resize((self.target_size, self.target_size)).convert("RGB")
+
+        description = "Describe this image in detail."
+        result = {
+            "image": self.to_tensor(image),
+            "description": description,
         }
         return result
