@@ -118,7 +118,10 @@ class OminiModel(L.LightningModule):
     def step(self, batch):
         imgs = batch["image"]
         conditions = batch["condition"]
+        condition_types = batch["condition_type"]
         prompts = batch["description"]
+        position_delta = batch["position_delta"][0]
+        position_scale = float(batch.get("position_scale", [1.0])[0])
         with torch.no_grad():
             text_query = self.mllm(
                 image=conditions,
@@ -142,6 +145,31 @@ class OminiModel(L.LightningModule):
             t_ = t.unsqueeze(1).unsqueeze(1)
             x_t = ((1 - t_) * x_0 + t_ * x_1).to(self.dtype)
 
+            # Prepare conditions
+            condition_latents, condition_ids = encode_images(self.flux_pipe, conditions)
+
+            # Add position delta
+            condition_ids[:, 1] += position_delta[0]
+            condition_ids[:, 2] += position_delta[1]
+
+            if position_scale != 1.0:
+                scale_bias = (position_scale - 1.0) / 2
+                condition_ids[:, 1] *= position_scale
+                condition_ids[:, 2] *= position_scale
+                condition_ids[:, 1] += scale_bias
+                condition_ids[:, 2] += scale_bias
+
+            # Prepare condition type
+            condition_type_ids = torch.tensor(
+                [
+                    Condition.get_type_id(condition_type)
+                    for condition_type in condition_types
+                ]
+            ).to(self.device)
+            condition_type_ids = (
+                torch.ones_like(condition_ids[:, 0]) * condition_type_ids[0]
+            ).unsqueeze(1)
+
             # Prepare guidance
             guidance = (
                 torch.ones_like(t).to(self.device)
@@ -155,9 +183,9 @@ class OminiModel(L.LightningModule):
             # Model config
             model_config=self.model_config,
             # Inputs of the condition (new feature)
-            condition_latents=None,
-            condition_ids=None,
-            condition_type_ids=None,
+            condition_latents=condition_latents,
+            condition_ids=condition_ids,
+            condition_type_ids=condition_type_ids,
             # Inputs to the original transformer
             hidden_states=x_t,
             timestep=t,
@@ -190,7 +218,7 @@ class Connector(nn.Module):
         
     def forward(self, x):
         x = self.encoder(x)
-        x = self.projector(x)
+        x = self.proj_out(x)
         return x
 
 class UnderstandingModel(nn.Module):

@@ -60,9 +60,14 @@ def main():
         print("Config:", config)
 
     # Initialize dataset and dataloader
-    if training_config["dataset"]["name"] == "metaquery":
-        dataset = load_dataset("parquet", data_files={"train": "portrait-512/train.parquet"})
-        dataset = MetaqueryDataset(dataset)
+    if training_config["dataset"]["type"] == "expression":
+        dataset = ExpressionDataset(
+            metadata=training_config["dataset"]["metadata_path"],
+            condition_size=training_config["dataset"]["condition_size"],
+            target_size=training_config["dataset"]["target_size"],
+            image_size=training_config["dataset"]["image_size"],
+            padding=training_config["dataset"]["padding"],
+        )
 
     print("Dataset length:", len(dataset))
     train_loader = DataLoader(

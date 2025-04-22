@@ -16,7 +16,7 @@ train:
   gradient_checkpointing: true
   save_path: "runs"
 
-  condition_type: "subject"
+  condition_type: "expression"
   dataset:
     type: "expression"
     condition_size: 512
