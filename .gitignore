@@ -1,0 +1,20 @@
+# 忽略实验输出
+runs/
+outputs/
+
+# 忽略模型权重
+weights/
+*.pth
+*.ckpt
+
+# 忽略临时文件
+*.log
+*.tmp
+
+# 忽略 Jupyter 自动生成的检查点
+.ipynb_checkpoints/
+
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
+runs/
