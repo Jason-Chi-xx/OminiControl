@@ -4,7 +4,7 @@ import copy
 import torch
 import torch.nn as nn
 from peft import LoraConfig, get_peft_model_state_dict
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, CLIPVisionModel, CLIPModel
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, CLIPVisionModel, CLIPModel, Qwen2Model, Qwen2Config, Cache
 import prodigyopt
 import torch.nn.functional as F
 import torchvision.transforms as T
@@ -12,8 +12,8 @@ from qwen_vl_utils import process_vision_info
 from ..flux.transformer import tranformer_forward
 from ..flux.condition import Condition
 from ..flux.pipeline_tools import encode_images, prepare_text_input
-
-
+from typing import Union, Optional, List, Tuple, Dict, Any
+from qwen_model_utils import Qwen2RMSNorm, Qwen2DecoderLayer
 
 class OminiModel(L.LightningModule):
     def __init__(
@@ -55,7 +55,7 @@ class OminiModel(L.LightningModule):
         # self.Query.train()
         # Initialize connector
         # self.connector = Connector(**connector_config).to(device).to(dtype=dtype)
-        self.connector = SimpleConnector().to(device).to(dtype=dtype)
+        self.connector = QwenConnector().to(device).to(dtype=dtype)
         self.connector.requires_grad = True
         self.connector.train()
         self.mllm = MetaUnderstandingModel(**mllm_config, device=device).to(device).to(dtype=dtype)
@@ -64,7 +64,8 @@ class OminiModel(L.LightningModule):
         self.image_encoder = self.clip_model.vision_model.to(device).to(dtype=dtype)
         self.image_encoder.requires_grad_(False).eval()
         self.clip_vision_projection = self.clip_model.visual_projection.to(device).to(dtype=dtype)
-        self.clip_vision_projection.requires_grad_(False).eval()
+        self.clip_vision_projection.requires_grad = True
+        self.clip_vision_projection.train()
         self.clip_processor = AutoProcessor.from_pretrained(image_encoder_config['name'])
 
         self.to(device).to(dtype)
@@ -234,6 +235,37 @@ class Connector(nn.Module):
         # x_2 = self.proj_out_2(x.mean(dim=1))  # Shape: (batch_size, output_dim_2)
         return x_1
 
+class Qwen2ModelNoCausal(Qwen2Model):
+
+    def _update_causal_mask(
+        self,
+        attention_mask: Union[torch.Tensor, "BlockMask"],
+        input_tensor: torch.Tensor,
+        cache_position: torch.Tensor,
+        past_key_values: Cache,
+        output_attentions: bool = False,
+    ):
+        return None
+
+
+
+class QwenConnector(nn.Module):
+    def __init__(self, input_dim:int=3584, output_dim:int=4096, device:str="cuda", dtype:torch.dtype=torch.bfloat16):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.config = Qwen2Config.from_json_file("/hy-tmp/Qwen2-7B/config.json")
+        self.layers = nn.ModuleList([
+            Qwen2DecoderLayer(self.config, layer_idx) for layer_idx in range(6)
+        ])
+        self.norm = Qwen2RMSNorm(self.input_dim, eps=self.config.rms_norm_eps)
+        self.proj_out = nn.Linear(self.input_dim, self.output_dim)
+
+    def forward(self, x):
+        x = self.transformer(inputs_embeds=x)
+        return self.proj_out(x)
+
+
 class UnderstandingModel(nn.Module):
     def __init__(
         self, 
@@ -394,7 +426,7 @@ class MetaUnderstandingModel(nn.Module):
         self.mllm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             mllm,
             torch_dtype=torch.bfloat16,
-            attn_implementation="flash_attention_2",
+            # attn_implementation="flash_attention_2",
         ).to(device)
         for param in self.mllm.parameters():
             param.requires_grad = False
@@ -456,7 +488,7 @@ class MetaUnderstandingModel(nn.Module):
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
         batch_size = inputs_embeds.shape[0]
-        inputs_embeds = torch.cat([inputs_embeds, self.learnable_query.unsqueeze(0).expand(batch_size, -1, -1)], dim=1)
+        # inputs_embeds = torch.cat([inputs_embeds, self.learnable_query.unsqueeze(0).expand(batch_size, -1, -1)], dim=1)
         outputs = self.mllm.model.forward(inputs_embeds=inputs_embeds)
         hidden_states = outputs['last_hidden_state'] # [batch_size, seq_len, 3584]
         hidden_states = hidden_states[:, -self.num_queries:, :]

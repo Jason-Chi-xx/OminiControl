@@ -387,7 +387,7 @@ class MetaqueryDataset(Dataset):
         mllm_name: str = "Qwen/Qwen2.5-VL-7B-Instruct",
         target_size: int = 512,
     ):
-        self.base_dataset = base_dataset['train']['image']
+        self.base_dataset = base_dataset['train']
         self.to_tensor = T.ToTensor()
         self.target_size = target_size
         self.processor = AutoProcessor.from_pretrained(mllm_name)
@@ -408,10 +408,13 @@ class MetaqueryDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.base_dataset[idx]
-        imagebytes = item["bytes"]
-        image_pil = Image.open(io.BytesIO(imagebytes))
-        image_pil = image_pil.resize((self.target_size, self.target_size)).convert("RGB")
-        imagebase64 = base64.b64encode(imagebytes).decode("utf-8")
+        # imagebytes = item["bytes"]
+        # image_pil = Image.open(io.BytesIO(imagebytes))
+        image_pil = item["image"]
+        buffer = io.BytesIO()
+        image_pil.save(buffer, format="PNG")
+        imagebase64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        # image_pil = image_pil.resize((self.target_size, self.target_size)).convert("RGB")
         description = "Describe this image in details. The output need to be used for image generation."
         image_tensor = self.to_tensor(image_pil)
         result = {

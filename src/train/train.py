@@ -61,7 +61,9 @@ def main():
 
     # Initialize dataset and dataloader
     if training_config["dataset"]["type"] == "metaquery":
-        dataset = load_dataset("parquet", data_files={"train": "/root/autodl-tmp/portrait-512/train-00000-of-00001-de1f4a94c6523aa8.parquet"})
+        # dataset = load_dataset("parquet", data_files={"train": "/root/autodl-tmp/portrait-512/train-00000-of-00001-de1f4a94c6523aa8.parquet"})
+        dataset = load_dataset("/hy-tmp/tmdb-people-image")
+
         dataset = MetaqueryDataset(
             dataset,
             mllm_name=training_config["dataset"]["mllm_name"],
